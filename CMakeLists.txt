@@ -31,6 +31,9 @@ find_package( OpenSSL REQUIRED )
 
 add_subdirectory(src)
 
+option(BUILD_TESTING "Build test suite" ON)
+option(BUILD_EXAMPLES "Build examples"  OFF)
+
 if (BUILD_TESTING)
   add_subdirectory(test)
 endif()
