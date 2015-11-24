@@ -75,9 +75,17 @@ void TestAes::testAesEncDec_data()
     QTest::addColumn<QByteArray>("input");
     QTest::addColumn<int>("padding");
 
+    QTest::newRow("Short")       << QByteArray( "H" )      << (int)QAesCrypt::Zeros;
+    QTest::newRow("Short")       << QByteArray( "H" )      << (int)QAesCrypt::PKCS7;
+    QTest::newRow("Empty")       << QByteArray( "" )      << (int)QAesCrypt::Zeros;
+    QTest::newRow("Empty")       << QByteArray( "" )      << (int)QAesCrypt::PKCS7;
 
     QTest::newRow("Hello World")       << QByteArray( "Hello World" )      << (int)QAesCrypt::Zeros;
     QTest::newRow("Exactly one block") << QByteArray( "Hello World45678" ) << (int)QAesCrypt::Zeros;
+    QTest::newRow("Hello World - PKCS7")       << QByteArray( "Hello World" )      << (int)QAesCrypt::PKCS7;
+    QTest::newRow("Exactly one block PKCS7") << QByteArray( "Hello World45678" ) << (int)QAesCrypt::PKCS7;
+
+
 }
 
 void TestAes::testAesEncDec()
@@ -94,7 +102,7 @@ void TestAes::testAesEncDec()
     QFETCH( QByteArray, input);
     QAesCrypt::ePadding paddingE = (QAesCrypt::ePadding)padding;
 
-    QByteArray initVec = randomBytes( blockSize );
+    QByteArray initVec = qRandomBytes( blockSize );
 
     qDebug() << "INP:" << input.toHex();
 
@@ -113,5 +121,105 @@ void TestAes::testAesEncDec()
     qDebug() << "DEC:" << dec.toHex();
 
     QCOMPARE( dec, input);
+
+}
+
+void TestAes::testPkcsPadding()
+{
+    QAesCrypt encoderRaw( QAesCrypt::Aes256 );
+    const QByteArray key="asdfqwerghjktyuiasdfqwerghjktyui";
+    const QByteArray initVec(QAesCrypt::AesBlockSize, 0);
+    encoderRaw.initialize(key, initVec);
+    encoderRaw.setPadding(QAesCrypt::NoPadding);
+
+    QAesCrypt encoderPadded( QAesCrypt::Aes256 );
+    encoderPadded.initialize(key, initVec);
+    encoderPadded.setPadding(QAesCrypt::PKCS7);
+
+    for ( int i =0; i<8; ++i) {
+        QByteArray unPadded( QAesCrypt::AesBlockSize-i-1, '\0' );
+
+        QByteArray padded( QAesCrypt::AesBlockSize, '\0' );
+
+        for (int j=1; j< i+2; ++j){
+            padded[QAesCrypt::AesBlockSize-j] = i+1;
+        }
+        qDebug() << "PAD:" << padded.toHex();
+        qDebug() << "UNP:" << unPadded.toHex();
+
+        QByteArray encExp = encoderRaw.aesEnc(padded);
+        QByteArray encAct = encoderPadded.aesEnc(unPadded);
+        QCOMPARE( encAct, encExp );
+    }
+
+}
+void TestAes::testBitPadding()
+{
+    QAesCrypt encoderRaw( QAesCrypt::Aes256 );
+    const QByteArray key="asdfqwerghjktyuiasdfqwerghjktyui";
+    const QByteArray initVec(QAesCrypt::AesBlockSize, 0);
+    encoderRaw.initialize(key, initVec);
+    encoderRaw.setPadding(QAesCrypt::NoPadding);
+
+    QAesCrypt encoderPadded( QAesCrypt::Aes256 );
+    encoderPadded.initialize(key, initVec);
+    encoderPadded.setPadding(QAesCrypt::BitPadding);
+
+    for ( int i =0; i<8; ++i) {
+        QByteArray unPadded( QAesCrypt::AesBlockSize-i-1, 'a' );
+
+        QByteArray padded( QAesCrypt::AesBlockSize, 'a' );
+
+        for (int j=1; j< i+2; ++j){
+            padded[QAesCrypt::AesBlockSize-j] = 0;
+        }
+        padded[QAesCrypt::AesBlockSize-i-1] = 1;
+
+        qDebug() << "PAD:" << padded.toHex();
+        qDebug() << "UNP:" << unPadded.toHex();
+
+        QByteArray encExp = encoderRaw.aesEnc(padded);
+        QByteArray encAct = encoderPadded.aesEnc(unPadded);
+        QCOMPARE( encAct, encExp );
+    }
+
+}
+
+void TestAes::testIncrementalCipher()
+{
+    // Compare encoding by blocks, against encoding one big block.
+    // Result should be the same.
+    QAesCrypt encoderBlocks( QAesCrypt::Aes256 );
+    const QByteArray key="asdfqwerghjktyuiasdfqwerghjktyui";
+    const QByteArray initVec(QAesCrypt::AesBlockSize, 0);
+    encoderBlocks.initialize(key, initVec);
+    encoderBlocks.setPadding(QAesCrypt::NoPadding);
+
+    QByteArray bigBlockPlain;
+    QByteArray blockEnc;
+    for (int i=0; i< 5; ++i) {
+        QByteArray oneBlock( QAesCrypt::AesBlockSize, (char) ( i % 0x100 ) );
+        blockEnc.append( encoderBlocks.aesEnc(oneBlock) );
+        bigBlockPlain.append( oneBlock );
+    }
+
+    QAesCrypt encoderBigBlock( QAesCrypt::Aes256 );
+    encoderBigBlock.initialize(key, initVec);
+    encoderBigBlock.setPadding(QAesCrypt::NoPadding);
+    QByteArray bigBlockCipher = encoderBigBlock.aesEnc( bigBlockPlain );
+
+    QCOMPARE ( blockEnc, bigBlockCipher);
+
+    // And decoding:
+    QByteArray blockDec;
+    encoderBlocks.initialize(key, initVec);
+
+    for (int i=0, numBlock = bigBlockCipher.size() / QAesCrypt::AesBlockSize; i< numBlock; ++i) {
+        QByteArray oneBlock( bigBlockCipher.mid(i*QAesCrypt::AesBlockSize, QAesCrypt::AesBlockSize));
+        blockDec.append( encoderBlocks.aesDec( oneBlock) );
+    }
+
+    QCOMPARE ( blockDec, bigBlockPlain);
+
 
 }

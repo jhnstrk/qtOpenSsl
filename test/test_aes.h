@@ -16,4 +16,9 @@ private slots:
     void testAesEncDec_data();
     void testAesEncDec();
 
+    void testPkcsPadding();
+    void testBitPadding();
+
+    void testIncrementalCipher();
+
 };

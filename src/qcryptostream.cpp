@@ -62,7 +62,7 @@ void QAesCrypt::initialize( const QByteArray & key, const QByteArray & initVec)
     d->initVec = initVec;
 
     if (key.size() != this->expectedKeyLen()) {
-        qWarning() << "Bad key length";
+        qWarning() << "Bad key length, expected" << this->expectedKeyLen();
         d->key.resize( this->expectedKeyLen() );
     }
 
@@ -94,6 +94,7 @@ QByteArray QAesCrypt::aesEnc (const QByteArray & input)
     int fullLen;
     switch( d->padding ){
     case QAesCrypt::PKCS7:
+    case QAesCrypt::BitPadding:
         numBlocks = ( input.size() + AES_BLOCK_SIZE )/ AES_BLOCK_SIZE;
         fullLen = numFullBlocks * AES_BLOCK_SIZE;
         break;
@@ -120,6 +121,57 @@ QByteArray QAesCrypt::aesEnc (const QByteArray & input)
             &d->enc_key,
             d->iv,
             AES_ENCRYPT);
+
+    switch( d->padding ){
+    case QAesCrypt::PKCS7:
+    {
+        const int auxLen = encsLen - fullLen;
+        QByteArray padding(auxLen, '\0');
+        // Copy input
+        for (int i=0; i<input.size() - fullLen; ++i){
+            padding[i] = input.at(fullLen + i);
+        }
+        // Add padding
+        const int nPadding = encsLen - input.size();
+        for (int i=input.size() - fullLen; i<auxLen;++i) {
+            padding[i] = nPadding;
+        }
+        AES_cbc_encrypt(
+                reinterpret_cast<const unsigned char *>(padding.constData()),
+                reinterpret_cast<unsigned char *>(out.data()) + fullLen,
+                auxLen,
+                &d->enc_key,
+                d->iv,
+                AES_ENCRYPT);
+    }
+        break;
+    case QAesCrypt::BitPadding:
+    {
+        const int auxLen = encsLen - fullLen;
+        QByteArray padding(auxLen, '\0');
+        // Copy input
+        for (int i=0; i<input.size() - fullLen; ++i){
+            padding[i] = input.at(fullLen + i);
+        }
+        // Add padding (zeros were already added from initialization).
+        const int nPadding = encsLen - input.size();
+        padding[input.size() - fullLen] = 1;
+
+        AES_cbc_encrypt(
+                reinterpret_cast<const unsigned char *>(padding.constData()),
+                reinterpret_cast<unsigned char *>(out.data()) + fullLen,
+                auxLen,
+                &d->enc_key,
+                d->iv,
+                AES_ENCRYPT);
+    }
+        break;
+    case QAesCrypt::NoPadding:
+    case QAesCrypt::Zeros:
+        break;
+    default:
+        break;
+    }
 
     return out;
 }
@@ -155,7 +207,34 @@ QByteArray QAesCrypt::aesDec ( const QByteArray & input)
             }
         }
         break;
-
+    case QAesCrypt::PKCS7:
+    {
+        if (out.isEmpty()){
+            return out; // Strictly not in spec.
+        }
+        int nPad = out.at(out.size() - 1);
+        out.chop( nPad );
+    }
+    break;
+    case BitPadding:
+    {
+        int iEnd = out.size();
+        while (iEnd > 0){
+            --iEnd;
+            int padVal = out.at(iEnd);
+            if (padVal == 0) {
+                continue;
+            } else if (padVal == 1) {
+                break;
+            } else {
+                qWarning() << "Unexpected padding" << padVal;
+                break;
+            }
+        }
+        out.resize(iEnd);
+        return out;
+    }
+    break;
     default:
         break;
     }
@@ -164,13 +243,17 @@ QByteArray QAesCrypt::aesDec ( const QByteArray & input)
 
 #include <openssl/rand.h>
 
-QByteArray randomBytes(int len)
+QByteArray qRandomBytes(int len, bool * ok)
 {
-    QByteArray ret;
-    ret.resize( len );
+    QByteArray ret(len, '\0');
+
     int status = RAND_bytes(reinterpret_cast<unsigned char*>(ret.data()), len);
     if (status != 1) {
         qWarning() << "Random bytes not available";
+    }
+
+    if (ok) {
+        *ok = (status == 0);
     }
     return ret;
 }
