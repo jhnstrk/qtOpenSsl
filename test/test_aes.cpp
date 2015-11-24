@@ -136,16 +136,16 @@ void TestAes::testPkcsPadding()
     encoderPadded.initialize(key, initVec);
     encoderPadded.setPadding(QAesCrypt::PKCS7);
 
-    for ( int i =0; i<8; ++i) {
-        QByteArray unPadded( QAesCrypt::AesBlockSize-i-1, '\0' );
+    for ( int i =0; i<QAesCrypt::AesBlockSize-1; ++i) {
+        QByteArray unPadded(QAesCrypt::AesBlockSize + i, '\0' );
 
-        QByteArray padded( QAesCrypt::AesBlockSize, '\0' );
+        QByteArray padded( 2*QAesCrypt::AesBlockSize, '\0' );
 
-        for (int j=1; j< i+2; ++j){
-            padded[QAesCrypt::AesBlockSize-j] = i+1;
+        for (int j=i; j< QAesCrypt::AesBlockSize; ++j){
+            padded[QAesCrypt::AesBlockSize+j] = QAesCrypt::AesBlockSize - i;
         }
-        qDebug() << "PAD:" << padded.toHex();
-        qDebug() << "UNP:" << unPadded.toHex();
+        // qDebug() << "PAD:" << padded.toHex();
+        // qDebug() << "UNP:" << unPadded.toHex();
 
         QByteArray encExp = encoderRaw.aesEnc(padded);
         QByteArray encAct = encoderPadded.aesEnc(unPadded);
@@ -165,15 +165,15 @@ void TestAes::testBitPadding()
     encoderPadded.initialize(key, initVec);
     encoderPadded.setPadding(QAesCrypt::BitPadding);
 
-    for ( int i =0; i<8; ++i) {
-        QByteArray unPadded( QAesCrypt::AesBlockSize-i-1, 'a' );
+    for ( int i =0; i<QAesCrypt::AesBlockSize-1; ++i) {
+        QByteArray unPadded( QAesCrypt::AesBlockSize + i, 'a' );
 
-        QByteArray padded( QAesCrypt::AesBlockSize, 'a' );
+        QByteArray padded( 2*QAesCrypt::AesBlockSize, 'a' );
 
-        for (int j=1; j< i+2; ++j){
-            padded[QAesCrypt::AesBlockSize-j] = 0;
+        for (int j= i + 1; j< QAesCrypt::AesBlockSize; ++j){
+            padded[QAesCrypt::AesBlockSize+j] = 0;
         }
-        padded[QAesCrypt::AesBlockSize-i-1] = 1;
+        padded[QAesCrypt::AesBlockSize+i] = 1;
 
         qDebug() << "PAD:" << padded.toHex();
         qDebug() << "UNP:" << unPadded.toHex();
